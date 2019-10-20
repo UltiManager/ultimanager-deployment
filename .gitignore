@@ -17,7 +17,8 @@ terraform/**/files/
 # Credentials
 .credentials/
 
-# Python Compiled Files
+# Python Artifacts
+*.egg-info/
 __pycache__/
 *.pyc
 

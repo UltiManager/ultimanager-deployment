@@ -2,6 +2,7 @@
 import argparse
 import base64
 import os
+import subprocess
 import sys
 import time
 from pprint import pprint
@@ -11,7 +12,7 @@ import googleapiclient.errors
 from oauth2client.client import GoogleCredentials
 
 
-BASE_PATH = os.path.dirname(os.path.abspath(__file__))
+BASE_PATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 CREDENTIALS_CACHE = os.path.join(BASE_PATH, ".credentials")
 CREDENTIALS_TERRAFORM = os.path.join(CREDENTIALS_CACHE, "terraform.json")
@@ -25,12 +26,15 @@ TERRAFORM_ADMIN_PROJECT_SERVICES = [
     "cloudresourcemanager",
     "iam",
     "serviceusage",
+    "storage-api",
 ]
 
 TERRAFORM_SERVICE_ACCOUNT_ID = 'terraform'
 TERRAFORM_SERVICE_ACCOUNT_NAME = 'Terraform'
 
 TERRAFORM_BUCKET_NAME = TERRAFORM_ADMIN_PROJECT_ID
+
+TERRAFORM_CLUSTER_DIR = os.path.join(BASE_PATH, 'terraform', 'cluster')
 
 
 def main():
@@ -61,6 +65,20 @@ def parse_args():
         metavar="organization-id"
     )
     bootstrap_parser.set_defaults(func=bootstrap)
+
+    deploy_parser = subparsers.add_parser(
+        "deploy",
+        help="Deploy the UltiManager infrastructure."
+    )
+    deploy_parser.add_argument(
+        "organization_id",
+        help=(
+            "The ID of the main UltiManager organization in GCP. This can be "
+            "discovered with 'gcloud organizations list'"
+        ),
+        metavar="organization-id"
+    )
+    deploy_parser.set_defaults(func=deploy)
 
     args = parser.parse_args()
     args.func(args)
@@ -635,6 +653,66 @@ def wait_for_operation(service_type, operation_ref):
         raise RuntimeError(status)
 
     return status.get('response', {})
+
+
+def deploy(args):
+    """
+    Deploy the infrastructure.
+
+    Args:
+        args:
+            The parsed CLI arguments.
+    """
+    subprocess_env = os.environ.copy()
+    subprocess_env['GOOGLE_APPLICATION_CREDENTIALS'] = CREDENTIALS_TERRAFORM
+    subprocess_env['TF_VAR_organization_id'] = args.organization_id
+
+    subprocess.run(
+        ['terraform', 'init'],
+        check=True,
+        cwd=TERRAFORM_CLUSTER_DIR,
+        env=subprocess_env,
+    )
+
+    subprocess.run(
+        ['terraform', 'plan', '-out', 'tfplan'],
+        check=True,
+        cwd=TERRAFORM_CLUSTER_DIR,
+        env=subprocess_env,
+    )
+
+    if not prompt_yes_no("Would you like to apply the above plan"):
+        print("Not applying plan. Exiting.\n")
+        sys.exit(0)
+
+    subprocess.run(
+        ['terraform', 'apply', 'tfplan'],
+        check=True,
+        cwd=TERRAFORM_CLUSTER_DIR,
+        env=subprocess_env,
+    )
+
+
+def prompt_yes_no(question, default=False):
+    if default:
+        options = "[Y]/n"
+    else:
+        options = "y/[N]"
+
+    prompt = f"{question} ({options}): "
+
+    while True:
+        answer = input(prompt)
+
+        if not answer:
+            return default
+
+        if answer.lower().startswith('y'):
+            return True
+        elif answer.lower().startswith('n'):
+            return False
+
+        print("Please answer with 'y' or 'n'.")
 
 
 if __name__ == "__main__":
