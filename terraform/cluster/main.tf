@@ -6,8 +6,9 @@ terraform {
 }
 
 provider "google" {
-  region  = var.gcp_region
   version = "~> 2.17"
+
+  region = var.gcp_region
 }
 
 provider "random" {
@@ -86,15 +87,19 @@ resource "google_container_node_pool" "primary_preemptible_nodes" {
 
 output "cluster_auth_ca_certificate" {
   sensitive = true
-  value     = google_container_cluster.primary.master_auth.0.cluster_ca_certificate
+  value     = base64decode(google_container_cluster.primary.master_auth.0.cluster_ca_certificate)
 }
 
 output "cluster_auth_certificate" {
   sensitive = true
-  value     = google_container_cluster.primary.master_auth.0.client_certificate
+  value     = base64decode(google_container_cluster.primary.master_auth.0.client_certificate)
 }
 
 output "cluster_auth_key" {
   sensitive = true
-  value     = google_container_cluster.primary.master_auth.0.client_key
+  value     = base64decode(google_container_cluster.primary.master_auth.0.client_key)
+}
+
+output "cluster_host" {
+  value = google_container_cluster.primary.endpoint
 }

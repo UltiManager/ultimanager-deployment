@@ -6,9 +6,10 @@ import sys
 from ultideploy import constants, credentials, resources
 
 
-PROJECT_ROOT = pathlib.Path(__file__) / '..' / '..'
+PROJECT_ROOT = pathlib.Path(__file__).parents[2]
 
 TERRAFORM_CLUSTER_CONFIG = PROJECT_ROOT / 'terraform' / 'cluster'
+TERRAFORM_K8S_CONFIG = PROJECT_ROOT / 'terraform' / 'k8s'
 
 
 def deploy(args):
@@ -31,34 +32,42 @@ def deploy(args):
     subprocess_env['TF_VAR_billing_account'] = billing_account.get('name')
     subprocess_env['TF_VAR_organization_id'] = args.organization_id
 
-    subprocess.run(
-        ['terraform', 'init'],
-        check=True,
-        cwd=TERRAFORM_CLUSTER_CONFIG,
-        env=subprocess_env,
-    )
-
-    plan_args = ['terraform', 'plan', '-out', 'tfplan']
+    terraform_paths = [TERRAFORM_CLUSTER_CONFIG, TERRAFORM_K8S_CONFIG]
     if args.destroy:
-        plan_args.append('-destroy')
+        terraform_paths.reverse()
 
-    subprocess.run(
-        plan_args,
-        check=True,
-        cwd=TERRAFORM_CLUSTER_CONFIG,
-        env=subprocess_env,
-    )
+    for terraform_config in terraform_paths:
+        subprocess.run(
+            ['terraform', 'init'],
+            check=True,
+            cwd=terraform_config,
+            env=subprocess_env,
+        )
 
-    if not prompt_yes_no("Would you like to apply the above plan"):
-        print("Not applying plan. Exiting.\n")
-        sys.exit(0)
+        plan_args = ['terraform', 'plan', '-out', 'tfplan']
+        if args.destroy:
+            plan_args.append('-destroy')
 
-    subprocess.run(
-        ['terraform', 'apply', 'tfplan'],
-        check=True,
-        cwd=TERRAFORM_CLUSTER_CONFIG,
-        env=subprocess_env,
-    )
+        subprocess.run(
+            plan_args,
+            check=True,
+            cwd=terraform_config,
+            env=subprocess_env,
+        )
+
+        # TODO: Check if plan does anything
+        # terraform show -json tfplan | jq .resource_changes[].change.actions[]
+
+        if not prompt_yes_no("Would you like to apply the above plan"):
+            print("Not applying plan. Exiting.\n")
+            sys.exit(0)
+
+        subprocess.run(
+            ['terraform', 'apply', 'tfplan'],
+            check=True,
+            cwd=terraform_config,
+            env=subprocess_env,
+        )
 
 
 def prompt_yes_no(question, default=False):
