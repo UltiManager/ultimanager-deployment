@@ -79,7 +79,7 @@ ultideploy deploy <GCP Organization ID>
 #### Deploy Usage
 
 ```
-usage: ultideploy deploy [-h] organization-id
+usage: ultideploy deploy [-h] [-d] organization-id
 
 positional arguments:
   organization-id  The ID of the main UltiManager organization in GCP. This
@@ -87,6 +87,7 @@ positional arguments:
 
 optional arguments:
   -h, --help       show this help message and exit
+  -d, --destroy    Destroy the resources that are currently deployed.
 ```
 
 ## License

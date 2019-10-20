@@ -9,6 +9,7 @@ from pprint import pprint
 
 import googleapiclient.discovery
 import googleapiclient.errors
+from google.oauth2 import service_account
 from oauth2client.client import GoogleCredentials
 
 
@@ -24,6 +25,7 @@ TERRAFORM_ADMIN_PROJECT_NAME = "UltiManager Terraform Admin"
 TERRAFORM_ADMIN_PROJECT_SERVICES = [
     "cloudbilling",
     "cloudresourcemanager",
+    "container",
     "iam",
     "serviceusage",
     "storage-api",
@@ -69,6 +71,13 @@ def parse_args():
     deploy_parser = subparsers.add_parser(
         "deploy",
         help="Deploy the UltiManager infrastructure."
+    )
+    deploy_parser.add_argument(
+        "-d",
+        "--destroy",
+        action='store_true',
+        default=False,
+        help="Destroy the resources that are currently deployed."
     )
     deploy_parser.add_argument(
         "organization_id",
@@ -443,13 +452,13 @@ def bootstrap_organization_privileges(
     found_billing_policy = False
     found_project_policy = False
     for binding in bindings:
-        if binding.get('role') == 'roles/billing.user':
+        if binding.get('role') == 'roles/billing.admin':
             found_billing_policy = True
 
             if service_account not in binding['members']:
                 is_modified = True
                 binding['members'].append(service_account)
-                print(f"Adding '{service_account}' to 'roles/billing.user'")
+                print(f"Adding '{service_account}' to 'roles/billing.admin'")
 
         elif binding['role'] == 'roles/resourcemanager.projectCreator':
             found_project_policy = True
@@ -466,9 +475,9 @@ def bootstrap_organization_privileges(
         is_modified = True
         bindings.append({
             "members": [service_account],
-            "role": "roles/billing.user"
+            "role": "roles/billing.admin"
         })
-        print("Adding new 'roles/billing.user' binding")
+        print("Adding new 'roles/billing.admin' binding")
 
     if not found_project_policy:
         is_modified = True
@@ -663,8 +672,14 @@ def deploy(args):
         args:
             The parsed CLI arguments.
     """
+    credentials = service_account.Credentials.from_service_account_file(
+        CREDENTIALS_TERRAFORM
+    )
+    billing_account = get_billing_account(credentials)
+
     subprocess_env = os.environ.copy()
     subprocess_env['GOOGLE_APPLICATION_CREDENTIALS'] = CREDENTIALS_TERRAFORM
+    subprocess_env['TF_VAR_billing_account'] = billing_account.get('name')
     subprocess_env['TF_VAR_organization_id'] = args.organization_id
 
     subprocess.run(
@@ -674,8 +689,12 @@ def deploy(args):
         env=subprocess_env,
     )
 
+    plan_args = ['terraform', 'plan', '-out', 'tfplan']
+    if args.destroy:
+        plan_args.append('-destroy')
+
     subprocess.run(
-        ['terraform', 'plan', '-out', 'tfplan'],
+        plan_args,
         check=True,
         cwd=TERRAFORM_CLUSTER_DIR,
         env=subprocess_env,

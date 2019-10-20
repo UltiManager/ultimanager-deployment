@@ -1,3 +1,7 @@
+variable "billing_account" {
+  description = "The name of the billing account to bill resource usage to."
+}
+
 variable "gcp_region" {
   default     = "us-east1"
   description = "The region to create GCP resources in."
