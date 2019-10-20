@@ -36,6 +36,12 @@ resource "google_project_service" "container" {
   service = "container.googleapis.com"
 }
 
+resource "google_project_iam_member" "viewers" {
+  member  = "domain:ultimanager.com"
+  project = google_project.ultimanager.id
+  role    = "roles/viewer"
+}
+
 resource "google_container_cluster" "primary" {
   location = var.gcp_region
   name     = "ultimanager"
