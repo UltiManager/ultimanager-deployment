@@ -2,15 +2,15 @@
 import argparse
 import base64
 import os
-import subprocess
 import sys
 import time
 from pprint import pprint
 
 import googleapiclient.discovery
 import googleapiclient.errors
-from google.oauth2 import service_account
 from oauth2client.client import GoogleCredentials
+
+from ultideploy import cache, commands, resources, constants
 
 
 BASE_PATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -18,9 +18,6 @@ BASE_PATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CREDENTIALS_CACHE = os.path.join(BASE_PATH, ".credentials")
 CREDENTIALS_TERRAFORM = os.path.join(CREDENTIALS_CACHE, "terraform.json")
 
-
-TERRAFORM_ADMIN_PROJECT_ID = "ultimanager-terraform-admin"
-TERRAFORM_ADMIN_PROJECT_NAME = "UltiManager Terraform Admin"
 
 TERRAFORM_ADMIN_PROJECT_SERVICES = [
     "cloudbilling",
@@ -31,16 +28,16 @@ TERRAFORM_ADMIN_PROJECT_SERVICES = [
     "storage-api",
 ]
 
-TERRAFORM_SERVICE_ACCOUNT_ID = 'terraform'
-TERRAFORM_SERVICE_ACCOUNT_NAME = 'Terraform'
-
-TERRAFORM_BUCKET_NAME = TERRAFORM_ADMIN_PROJECT_ID
+TERRAFORM_BUCKET_NAME = constants.TERRAFORM_ADMIN_PROJECT_ID
 
 TERRAFORM_CLUSTER_DIR = os.path.join(BASE_PATH, 'terraform', 'cluster')
 
 
 def main():
-    parse_args()
+    cache.init_cache()
+
+    args = parse_args()
+    args.func(args)
 
 
 def parse_args():
@@ -87,10 +84,9 @@ def parse_args():
         ),
         metavar="organization-id"
     )
-    deploy_parser.set_defaults(func=deploy)
+    deploy_parser.set_defaults(func=commands.deploy)
 
-    args = parser.parse_args()
-    args.func(args)
+    return parser.parse_args()
 
 
 def default_command(_):
@@ -111,20 +107,20 @@ def bootstrap(args):
         credentials=credentials
     )
 
-    print(f"Looking for existing '{TERRAFORM_ADMIN_PROJECT_ID}' project...")
+    print(f"Looking for existing '{constants.TERRAFORM_ADMIN_PROJECT_ID}' project...")
     request = projects_service.projects().list(
-        filter=f"id:{TERRAFORM_ADMIN_PROJECT_ID}"
+        filter=f"id:{constants.TERRAFORM_ADMIN_PROJECT_ID}"
     )
     response = request.execute()
     projects = response.get("projects", [])
 
     if len(projects) == 0:
-        print(f"The '{TERRAFORM_ADMIN_PROJECT_ID}' project does not exist.\n")
+        print(f"The '{constants.TERRAFORM_ADMIN_PROJECT_ID}' project does not exist.\n")
         project = create_terraform_admin_project(
             projects_service, args.organization_id
         )
     elif len(projects) == 1:
-        print(f"The '{TERRAFORM_ADMIN_PROJECT_ID}' project already exists.\n")
+        print(f"The '{constants.TERRAFORM_ADMIN_PROJECT_ID}' project already exists.\n")
         project = projects[0]
     else:
         print(
@@ -135,14 +131,19 @@ def bootstrap(args):
 
     print(f"Project Number: {project['projectNumber']}\n")
 
-    billing_account = get_billing_account(credentials)
+    billing_account = resources.get_billing_account(credentials)
     set_project_billing_account(
         project.get('projectId'), billing_account.get('name'), credentials
     )
 
     enable_admin_services(project['projectNumber'], credentials)
 
-    service_account = create_service_account(credentials)
+    service_account = resources.get_or_create_service_account(
+        constants.TERRAFORM_ADMIN_PROJECT_ID,
+        constants.TERRAFORM_SERVICE_ACCOUNT_ID,
+        constants.TERRAFORM_SERVICE_ACCOUNT_NAME,
+        credentials
+    )
     bootstrap_credentials(service_account.get('name'), credentials)
 
     bootstrap_organization_privileges(
@@ -197,55 +198,21 @@ def create_terraform_admin_project(service, organization_id):
             project.
     """
     project_body = {
-        "name": TERRAFORM_ADMIN_PROJECT_NAME,
+        "name": constants.TERRAFORM_ADMIN_PROJECT_NAME,
         "parent": {
             "type": "organization",
             "id": organization_id
         },
-        "projectId": TERRAFORM_ADMIN_PROJECT_ID
+        "projectId": constants.TERRAFORM_ADMIN_PROJECT_ID
     }
 
-    print(f"Creating '{TERRAFORM_ADMIN_PROJECT_ID}' project...")
+    print(f"Creating '{constants.TERRAFORM_ADMIN_PROJECT_ID}' project...")
     request = service.projects().create(body=project_body)
     response = request.execute()
     project = wait_for_operation('cloudresourcemanager', response.get('name'))
     print("Successfully created project.\n")
 
     return project
-
-
-def get_billing_account(credentials):
-    """
-    Get the billing account to use for the admin project.
-
-    Args:
-        credentials:
-            The credentials used to authenticate the call.
-
-    Returns:
-        The billing account to use.
-    """
-    service = googleapiclient.discovery.build(
-        "cloudbilling", "v1", credentials=credentials
-    )
-    print("Retrieving billing account for admin project...")
-    request = service.billingAccounts().list()
-    response = request.execute()
-
-    if len(response.get("billingAccounts", [])) != 1:
-        raise RuntimeError(
-            f"Expected to find 1 billing account, but found "
-            f"{len(response.get('billingAccounts'))} accounts instead:\n\n"
-            f"{response.get('billingAccounts')}"
-        )
-
-    account = response.get('billingAccounts')[0]
-    print(
-        f"Found billing account: {account.get('name')} "
-        f"({account.get('displayName')})\n"
-    )
-
-    return account
 
 
 def set_project_billing_account(project_id, billing_account_name, credentials):
@@ -284,7 +251,7 @@ def enable_admin_services(project_number, credentials):
         "serviceusage", "v1", credentials=credentials
     )
 
-    print(f"Enabling services for '{TERRAFORM_ADMIN_PROJECT_ID}':")
+    print(f"Enabling services for '{constants.TERRAFORM_ADMIN_PROJECT_ID}':")
     for s in TERRAFORM_ADMIN_PROJECT_SERVICES:
         print(f"  - {s}.googleapis.com")
 
@@ -306,67 +273,6 @@ def enable_admin_services(project_number, credentials):
             print(f"Error enabling '{result.get('name')}':")
             pprint(result)
             sys.exit(1)
-
-
-def create_service_account(credentials):
-    """
-    Create the ``terraform`` service account if it does not already
-    exist.
-
-    Args:
-        credentials:
-            The credentials to use to create the account.
-
-    Returns:
-        The service account's information.
-    """
-    print(
-        f"Searching for existing '{TERRAFORM_SERVICE_ACCOUNT_ID}' service "
-        f"account..."
-    )
-
-    service = googleapiclient.discovery.build(
-        "iam", "v1", credentials=credentials
-    )
-    project = f"projects/{TERRAFORM_ADMIN_PROJECT_ID}"
-    email = f"{TERRAFORM_SERVICE_ACCOUNT_ID}@{TERRAFORM_ADMIN_PROJECT_ID}.iam.gserviceaccount.com"
-
-    request = service.projects().serviceAccounts().list(name=project)
-    while request is not None:
-        response = request.execute()
-
-        for account in response.get('accounts', []):
-            if account.get("email") == email:
-                print(
-                    f"Found existing '{TERRAFORM_SERVICE_ACCOUNT_ID}' account."
-                    f"\n"
-                )
-                return account
-
-        request = service.projects().serviceAccounts().list_next(
-            previous_request=request, previous_response=response
-        )
-
-    print(f"Could not find existing account. Creating a new one...")
-
-    request_body = {
-        "accountId": TERRAFORM_SERVICE_ACCOUNT_ID,
-        "serviceAccount": {
-            "displayName": TERRAFORM_SERVICE_ACCOUNT_NAME,
-        },
-    }
-    request = service.projects().serviceAccounts().create(
-        body=request_body,
-        name=project
-    )
-    response = request.execute()
-
-    print(
-        f"Successfully created the '{TERRAFORM_SERVICE_ACCOUNT_ID}' service "
-        f"account.\n"
-    )
-
-    return response
 
 
 def bootstrap_credentials(service_account_name, credentials):
@@ -662,76 +568,6 @@ def wait_for_operation(service_type, operation_ref):
         raise RuntimeError(status)
 
     return status.get('response', {})
-
-
-def deploy(args):
-    """
-    Deploy the infrastructure.
-
-    Args:
-        args:
-            The parsed CLI arguments.
-    """
-    credentials = service_account.Credentials.from_service_account_file(
-        CREDENTIALS_TERRAFORM
-    )
-    billing_account = get_billing_account(credentials)
-
-    subprocess_env = os.environ.copy()
-    subprocess_env['GOOGLE_APPLICATION_CREDENTIALS'] = CREDENTIALS_TERRAFORM
-    subprocess_env['TF_VAR_billing_account'] = billing_account.get('name')
-    subprocess_env['TF_VAR_organization_id'] = args.organization_id
-
-    subprocess.run(
-        ['terraform', 'init'],
-        check=True,
-        cwd=TERRAFORM_CLUSTER_DIR,
-        env=subprocess_env,
-    )
-
-    plan_args = ['terraform', 'plan', '-out', 'tfplan']
-    if args.destroy:
-        plan_args.append('-destroy')
-
-    subprocess.run(
-        plan_args,
-        check=True,
-        cwd=TERRAFORM_CLUSTER_DIR,
-        env=subprocess_env,
-    )
-
-    if not prompt_yes_no("Would you like to apply the above plan"):
-        print("Not applying plan. Exiting.\n")
-        sys.exit(0)
-
-    subprocess.run(
-        ['terraform', 'apply', 'tfplan'],
-        check=True,
-        cwd=TERRAFORM_CLUSTER_DIR,
-        env=subprocess_env,
-    )
-
-
-def prompt_yes_no(question, default=False):
-    if default:
-        options = "[Y]/n"
-    else:
-        options = "y/[N]"
-
-    prompt = f"{question} ({options}): "
-
-    while True:
-        answer = input(prompt)
-
-        if not answer:
-            return default
-
-        if answer.lower().startswith('y'):
-            return True
-        elif answer.lower().startswith('n'):
-            return False
-
-        print("Please answer with 'y' or 'n'.")
 
 
 if __name__ == "__main__":

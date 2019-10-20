@@ -1,0 +1,5 @@
+TERRAFORM_ADMIN_PROJECT_ID = 'ultimanager-terraform-admin'
+TERRAFORM_ADMIN_PROJECT_NAME = 'UltiManager Terraform Admin'
+
+TERRAFORM_SERVICE_ACCOUNT_ID = 'terraform'
+TERRAFORM_SERVICE_ACCOUNT_NAME = 'Terraform'
