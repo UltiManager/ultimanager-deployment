@@ -11,6 +11,12 @@ provider "google" {
   region = var.gcp_region
 }
 
+provider "google-beta" {
+  version = "~> 2.17"
+
+  region = var.gcp_region
+}
+
 provider "random" {
   version = "~> 2.2"
 }
@@ -36,16 +42,28 @@ resource "google_project_service" "container" {
   service = "container.googleapis.com"
 }
 
+resource "google_project_service" "sourcerepo" {
+  project = google_project.ultimanager.id
+  service = "sourcerepo.googleapis.com"
+}
+
 resource "google_project_iam_member" "viewers" {
   member  = "domain:ultimanager.com"
   project = google_project.ultimanager.id
-  role    = "roles/viewer"
+  role    = "roles/editor"
+}
+
+data "google_container_engine_versions" "latest_patch" {
+  location       = var.gcp_region
+  project        = google_project.ultimanager.id
+  version_prefix = "1.14."
 }
 
 resource "google_container_cluster" "primary" {
-  location = var.gcp_region
-  name     = "ultimanager"
-  project  = google_project.ultimanager.id
+  location           = var.gcp_region
+  min_master_version = data.google_container_engine_versions.latest_patch.latest_master_version
+  name               = "ultimanager"
+  project            = google_project.ultimanager.id
 
   # We can't create a cluster with no node pool defined, but we want to only use
   # separately managed node pools. So we create the smallest possible default
@@ -73,6 +91,7 @@ resource "google_container_node_pool" "primary_preemptible_nodes" {
   name       = "ultimanager-primary-node-pool"
   node_count = 1
   project    = google_project.ultimanager.id
+  version    = data.google_container_engine_versions.latest_patch.latest_node_version
 
   node_config {
     preemptible  = true
@@ -87,6 +106,8 @@ resource "google_container_node_pool" "primary_preemptible_nodes" {
       "https://www.googleapis.com/auth/devstorage.read_only",
       "https://www.googleapis.com/auth/logging.write",
       "https://www.googleapis.com/auth/monitoring",
+      # For deploying from cluster state repository
+      "https://www.googleapis.com/auth/source.read_write",
     ]
   }
 }
@@ -108,4 +129,8 @@ output "cluster_auth_key" {
 
 output "cluster_host" {
   value = google_container_cluster.primary.endpoint
+}
+
+output "project" {
+  value = google_project.ultimanager
 }

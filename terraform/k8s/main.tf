@@ -34,15 +34,3 @@ data "terraform_remote_state" "cluster" {
 }
 
 data "google_client_config" "default" {}
-
-resource "kubernetes_storage_class" "example" {
-  storage_provisioner = "kubernetes.io/gce-pd"
-  reclaim_policy      = "Retain"
-  parameters = {
-    type = "pd-standard"
-  }
-
-  metadata {
-    name = "terraform-example"
-  }
-}

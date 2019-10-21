@@ -2,6 +2,7 @@ TERRAFORM_ADMIN_PROJECT_ID = 'ultimanager-terraform-admin'
 TERRAFORM_ADMIN_PROJECT_NAME = 'UltiManager Terraform Admin'
 TERRAFORM_ADMIN_PROJECT_SERVICES = [
     "cloudbilling",
+    "cloudbuild",
     "cloudresourcemanager",
     "container",
     "iam",
