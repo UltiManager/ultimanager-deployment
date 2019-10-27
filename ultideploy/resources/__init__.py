@@ -7,6 +7,7 @@ import googleapiclient.discovery
 import googleapiclient.errors
 
 from ultideploy import constants, credentials
+from ultideploy.resources import iam
 
 
 def create_terraform_admin_project(service, organization_id):
@@ -302,53 +303,17 @@ def bootstrap_organization_privileges(
 
     print("Fetched current IAM policy. Comparing to desired state...")
 
-    bindings = policy.get('bindings', [])
     service_account = f"serviceAccount:{service_account_email}"
-
-    is_modified = False
-    found_billing_policy = False
-    found_project_policy = False
-    for binding in bindings:
-        if binding.get('role') == 'roles/billing.admin':
-            found_billing_policy = True
-
-            if service_account not in binding['members']:
-                is_modified = True
-                binding['members'].append(service_account)
-                print(f"Adding '{service_account}' to 'roles/billing.admin'")
-
-        elif binding['role'] == 'roles/resourcemanager.projectCreator':
-            found_project_policy = True
-
-            if service_account not in binding['members']:
-                is_modified = True
-                binding['members'].append(service_account)
-                print(
-                    f"Adding '{service_account}' to "
-                    f"'roles/resourceManager.projectCreator'"
-                )
-
-    if not found_billing_policy:
-        is_modified = True
-        bindings.append({
-            "members": [service_account],
-            "role": "roles/billing.admin"
-        })
-        print("Adding new 'roles/billing.admin' binding")
-
-    if not found_project_policy:
-        is_modified = True
-        bindings.append({
-            "members": [service_account],
-            "role": "roles/resourcemanager.projectCreator",
-        })
-        print("Adding new 'roles/resourcemanager.projectCreator' binding")
+    is_modified, new_policy = iam.include_members(policy, {
+        "roles/billing.admin": [service_account],
+        "roles/resourcemanager.projectCreator": [service_account],
+    })
 
     if is_modified:
         print("Changes need to be applied...")
 
         request = service.organizations().setIamPolicy(
-            body={"policy": {"bindings": bindings}},
+            body={"policy": new_policy},
             resource=organization_id
         )
         request.execute()
@@ -358,7 +323,7 @@ def bootstrap_organization_privileges(
 
 
 def bootstrap_admin_project_privileges(
-        project_id, service_account_email, credentials
+        project_id, service_account_email, google_credentials
 ):
     """
     Bootstrap the IAM policy required to grant Terraform access to the
@@ -369,13 +334,13 @@ def bootstrap_admin_project_privileges(
             The ID of the Terraform admin project..
         service_account_email:
             The email identifying the Terraform service account.
-        credentials:
+        google_credentials:
             The credentials authorizing the modification of the IAM
             policy.
     """
     print("Getting current IAM policy for project...")
     service = googleapiclient.discovery.build(
-        "cloudresourcemanager", "v1", credentials=credentials
+        "cloudresourcemanager", "v1", credentials=google_credentials
     )
 
     request = service.projects().getIamPolicy(
@@ -385,50 +350,17 @@ def bootstrap_admin_project_privileges(
 
     print("Fetched current IAM policy. Comparing to desired state...")
 
-    bindings = policy.get('bindings', [])
     service_account = f"serviceAccount:{service_account_email}"
-
-    is_modified = False
-    found_storage_policy = False
-    found_viewer_policy = False
-    for binding in bindings:
-        if binding.get('role') == 'roles/storage.admin':
-            found_storage_policy = True
-
-            if service_account not in binding['members']:
-                is_modified = True
-                binding['members'].append(service_account)
-                print(f"Adding '{service_account}' to 'roles/storage.admin'")
-
-        elif binding['role'] == 'roles/viewer':
-            found_viewer_policy = True
-
-            if service_account not in binding['members']:
-                is_modified = True
-                binding['members'].append(service_account)
-                print(f"Adding '{service_account}' to 'roles/viewer'")
-
-    if not found_storage_policy:
-        is_modified = True
-        bindings.append({
-            "members": [service_account],
-            "role": "roles/storage.admin"
-        })
-        print("Adding new 'roles/storage.admin' binding")
-
-    if not found_viewer_policy:
-        is_modified = True
-        bindings.append({
-            "members": [service_account],
-            "role": "roles/viewer",
-        })
-        print("Adding new 'roles/viewer' binding")
+    is_modified, new_policy = iam.include_members(policy, {
+        "roles/storage.admin": [service_account],
+        "roles/viewer": [service_account]
+    })
 
     if is_modified:
         print("Changes need to be applied...")
 
         request = service.projects().setIamPolicy(
-            body={"policy": {"bindings": bindings}},
+            body={"policy": new_policy},
             resource=project_id
         )
         request.execute()
