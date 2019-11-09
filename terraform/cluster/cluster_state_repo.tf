@@ -1,24 +1,22 @@
 resource "google_sourcerepo_repository" "cluster_state" {
   name    = "ultimanager-cluster-state"
-  project = google_project.ultimanager.id
-
-  depends_on = [google_project_service.sourcerepo]
+  project = local.root_project_id
 }
 
 resource "google_project_iam_member" "cloudbuild" {
-  member  = "serviceAccount:${google_project.ultimanager.number}@cloudbuild.gserviceaccount.com"
-  project = google_project.ultimanager.id
+  member  = "serviceAccount:${data.terraform_remote_state.project.outputs.root_project.number}@cloudbuild.gserviceaccount.com"
+  project = local.root_project_id
   role    = "roles/source.writer"
 }
 
 resource "google_service_account" "flux" {
   account_id = "fluxcd"
-  project    = google_project.ultimanager.id
+  project    = local.root_project_id
 }
 
 resource "google_project_iam_member" "flux_source_writer" {
   member  = "serviceAccount:${google_service_account.flux.email}"
-  project = google_project.ultimanager.id
+  project = local.root_project_id
   role    = "roles/source.writer"
 }
 

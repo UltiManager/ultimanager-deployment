@@ -10,6 +10,7 @@ PROJECT_ROOT = pathlib.Path(__file__).parents[2]
 
 TERRAFORM_CLUSTER_CONFIG = PROJECT_ROOT / 'terraform' / 'cluster'
 TERRAFORM_K8S_CONFIG = PROJECT_ROOT / 'terraform' / 'k8s'
+TERRAFORM_PROJECT_CONFIG = PROJECT_ROOT / 'terraform' / 'project'
 
 
 def deploy(args):
@@ -34,7 +35,11 @@ def deploy(args):
     subprocess_env['TF_VAR_organization_id'] = args.organization_id
     subprocess_env['TF_VAR_root_domain'] = constants.ROOT_DOMAIN
 
-    terraform_paths = [TERRAFORM_CLUSTER_CONFIG, TERRAFORM_K8S_CONFIG]
+    terraform_paths = [
+        TERRAFORM_PROJECT_CONFIG,
+        TERRAFORM_CLUSTER_CONFIG,
+        TERRAFORM_K8S_CONFIG
+    ]
     if args.destroy:
         terraform_paths.reverse()
 

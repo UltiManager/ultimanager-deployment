@@ -5,6 +5,15 @@ terraform {
   }
 }
 
+data "terraform_remote_state" "project" {
+  backend = "gcs"
+
+  config = {
+    bucket = "ultimanager-terraform-admin"
+    prefix = "project"
+  }
+}
+
 provider "google" {
   version = "~> 2.17"
 
@@ -21,41 +30,13 @@ provider "random" {
   version = "~> 2.2"
 }
 
-data "google_billing_account" "billing_account" {
-  billing_account = var.billing_account
-}
-
-resource "random_id" "project_id" {
-  byte_length = 4
-  prefix      = "ultimanager-${terraform.workspace}-"
-}
-
-resource "google_project" "ultimanager" {
-  billing_account = data.google_billing_account.billing_account.id
-  name            = "UltiManager - ${terraform.workspace}"
-  org_id          = var.organization_id
-  project_id      = random_id.project_id.hex
-}
-
-resource "google_project_service" "container" {
-  project = google_project.ultimanager.id
-  service = "container.googleapis.com"
-}
-
-resource "google_project_service" "sourcerepo" {
-  project = google_project.ultimanager.id
-  service = "sourcerepo.googleapis.com"
-}
-
-resource "google_project_iam_member" "viewers" {
-  member  = "domain:ultimanager.com"
-  project = google_project.ultimanager.id
-  role    = "roles/editor"
+locals {
+  root_project_id = data.terraform_remote_state.project.outputs.root_project.id
 }
 
 data "google_container_engine_versions" "latest_patch" {
   location       = var.gcp_region
-  project        = google_project.ultimanager.id
+  project        = local.root_project_id
   version_prefix = "1.14."
 }
 
@@ -63,7 +44,7 @@ resource "google_container_cluster" "primary" {
   location           = var.gcp_region
   min_master_version = data.google_container_engine_versions.latest_patch.latest_master_version
   name               = "ultimanager"
-  project            = google_project.ultimanager.id
+  project            = local.root_project_id
 
   # We can't create a cluster with no node pool defined, but we want to only use
   # separately managed node pools. So we create the smallest possible default
@@ -79,10 +60,6 @@ resource "google_container_cluster" "primary" {
       issue_client_certificate = false
     }
   }
-
-  depends_on = [
-    google_project_service.container
-  ]
 }
 
 resource "google_container_node_pool" "primary_preemptible_nodes" {
@@ -90,7 +67,7 @@ resource "google_container_node_pool" "primary_preemptible_nodes" {
   location   = var.gcp_region
   name       = "ultimanager-primary-node-pool"
   node_count = 1
-  project    = google_project.ultimanager.id
+  project    = local.root_project_id
   version    = data.google_container_engine_versions.latest_patch.latest_node_version
 
   node_config {
@@ -129,8 +106,4 @@ output "cluster_auth_key" {
 
 output "cluster_host" {
   value = google_container_cluster.primary.endpoint
-}
-
-output "project" {
-  value = google_project.ultimanager
 }

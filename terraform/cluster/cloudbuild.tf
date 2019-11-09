@@ -1,5 +1,5 @@
 resource "google_project_service" "cloudbuild" {
-  project = google_project.ultimanager.id
+  project = local.root_project_id
   service = "cloudbuild.googleapis.com"
 }
 
@@ -7,7 +7,7 @@ resource "google_cloudbuild_trigger" "web" {
   provider = "google-beta"
 
   filename = "cloudbuild.yml"
-  project  = google_project.ultimanager.id
+  project  = local.root_project_id
 
   substitutions = {
     _K8S_CLUSTER_NAME     = google_container_cluster.primary.name

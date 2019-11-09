@@ -1,6 +1,6 @@
 resource "google_compute_global_address" "cluster" {
   name    = "ultimanager-cluster"
-  project = google_project.ultimanager.id
+  project = local.root_project_id
 }
 
 data "google_project" "dns" {
