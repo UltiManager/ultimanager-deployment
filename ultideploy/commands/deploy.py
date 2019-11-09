@@ -30,7 +30,9 @@ def deploy(args):
         constants.TERRAFORM_SERVICE_ACCOUNT_ID
     )
     subprocess_env['TF_VAR_billing_account'] = billing_account.get('name')
+    subprocess_env['TF_VAR_dns_project_id'] = constants.DNS_PROJECT_ID
     subprocess_env['TF_VAR_organization_id'] = args.organization_id
+    subprocess_env['TF_VAR_root_domain'] = constants.ROOT_DOMAIN
 
     terraform_paths = [TERRAFORM_CLUSTER_CONFIG, TERRAFORM_K8S_CONFIG]
     if args.destroy:

@@ -331,14 +331,14 @@ def bootstrap_admin_project_privileges(
 
     Args:
         project_id:
-            The ID of the Terraform admin project..
+            The ID of the Terraform admin project.
         service_account_email:
             The email identifying the Terraform service account.
         google_credentials:
             The credentials authorizing the modification of the IAM
             policy.
     """
-    print("Getting current IAM policy for project...")
+    print("Getting current IAM policy for admin project...")
     service = googleapiclient.discovery.build(
         "cloudresourcemanager", "v1", credentials=google_credentials
     )
@@ -354,6 +354,52 @@ def bootstrap_admin_project_privileges(
     is_modified, new_policy = iam.include_members(policy, {
         "roles/storage.admin": [service_account],
         "roles/viewer": [service_account]
+    })
+
+    if is_modified:
+        print("Changes need to be applied...")
+
+        request = service.projects().setIamPolicy(
+            body={"policy": new_policy},
+            resource=project_id
+        )
+        request.execute()
+        print("Set IAM policy changes.\n")
+    else:
+        print("No IAM policy changes needed.\n")
+
+
+def bootstrap_dns_project_privileges(
+        project_id, service_account_email, google_credentials
+):
+    """
+    Bootstrap the IAM policy required to grant Terraform access to the
+    resources it needs to access in the project that holds DNS records.
+
+    Args:
+        project_id:
+            The ID of the Terraform DNS project.
+        service_account_email:
+            The email identifying the Terraform service account.
+        google_credentials:
+            The credentials authorizing the modification of the IAM
+            policy.
+    """
+    print("Getting current IAM policy for DNS project...")
+    service = googleapiclient.discovery.build(
+        "cloudresourcemanager", "v1", credentials=google_credentials
+    )
+
+    request = service.projects().getIamPolicy(
+        body={}, resource=project_id
+    )
+    policy = request.execute()
+
+    print("Fetched current IAM policy. Comparing to desired state...")
+
+    service_account = f"serviceAccount:{service_account_email}"
+    is_modified, new_policy = iam.include_members(policy, {
+        "roles/dns.admin": [service_account],
     })
 
     if is_modified:

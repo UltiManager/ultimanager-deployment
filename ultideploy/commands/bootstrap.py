@@ -67,6 +67,11 @@ def bootstrap(args):
         service_account.get('email'),
         google_credentials
     )
+    resources.bootstrap_dns_project_privileges(
+        constants.DNS_PROJECT_ID,
+        service_account.get('email'),
+        google_credentials
+    )
 
     resources.bootstrap_storage_bucket(
         project.get('projectId'), constants.TERRAFORM_BUCKET_NAME, google_credentials

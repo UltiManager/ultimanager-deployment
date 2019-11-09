@@ -1,0 +1,30 @@
+resource "google_compute_global_address" "cluster" {
+  name    = "ultimanager-cluster"
+  project = google_project.ultimanager.id
+}
+
+data "google_project" "dns" {
+  project_id = var.dns_project_id
+}
+
+data "google_dns_managed_zone" "public" {
+  name    = "ultimanager"
+  project = data.google_project.dns.id
+}
+
+resource "google_dns_record_set" "app" {
+  managed_zone = data.google_dns_managed_zone.public.name
+  name         = data.google_dns_managed_zone.public.dns_name
+  project      = data.google_project.dns.id
+  rrdatas      = [google_compute_global_address.cluster.address]
+  ttl          = 60
+  type         = "A"
+}
+
+output "cluster_address" {
+  value = google_compute_global_address.cluster
+}
+
+output "root_domain" {
+  value = var.root_domain
+}
