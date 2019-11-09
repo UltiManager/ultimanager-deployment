@@ -1,0 +1,78 @@
+import json
+import subprocess
+
+from .base import BaseStep
+
+
+class TerraformStep(BaseStep):
+    """
+    Apply a set of Terraform configurations.
+    """
+
+    def __init__(self, name, configuration_directory, env=None, outputs=None):
+        self.name = name
+        self.configuration_directory = configuration_directory
+        self.env = env or {}
+        self.outputs = outputs or []
+
+    def run(self, destroy=False, **kwargs):
+        self._init()
+        self._plan(destroy)
+
+        if not self._prompt():
+            return False, {}
+
+        self._apply()
+
+        outputs = self._get_outputs() if not destroy else {}
+
+        return True, outputs
+
+    def _init(self):
+        subprocess.run(
+            ['terraform', 'init'],
+            check=True,
+            cwd=self.configuration_directory,
+            env=self.env,
+        )
+
+    def _plan(self, destroy):
+        plan_args = ['terraform', 'plan', '-out', 'tfplan']
+        if destroy:
+            plan_args.append('-destroy')
+
+        subprocess.run(
+            plan_args,
+            check=True,
+            cwd=self.configuration_directory,
+            env=self.env,
+        )
+
+    def _prompt(self):
+        return self.prompt_yes_no("Would you like to apply the above plan?")
+
+    def _apply(self):
+        subprocess.run(
+            ['terraform', 'apply', 'tfplan'],
+            check=True,
+            cwd=self.configuration_directory,
+            env=self.env,
+        )
+
+    def _get_outputs(self):
+        results = subprocess.run(
+            ['terraform', 'output', '-json'],
+            check=True,
+            cwd=self.configuration_directory,
+            encoding='utf8',
+            env=self.env,
+            stdout=subprocess.PIPE,
+        )
+        raw_outputs = json.loads(results.stdout)
+
+        outputs = {}
+        for output_path in self.outputs:
+            resource, attr = output_path.split(".")
+            outputs[f"{resource}_{attr}"] = raw_outputs[resource]['value'][attr]
+
+        return outputs

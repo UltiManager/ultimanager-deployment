@@ -1,9 +1,9 @@
 import os
 import pathlib
-import subprocess
 import sys
 
 from ultideploy import constants, credentials, resources
+from ultideploy.steps import LinkGithub, TerraformStep
 
 
 PROJECT_ROOT = pathlib.Path(__file__).parents[2]
@@ -35,65 +35,29 @@ def deploy(args):
     subprocess_env['TF_VAR_organization_id'] = args.organization_id
     subprocess_env['TF_VAR_root_domain'] = constants.ROOT_DOMAIN
 
-    terraform_paths = [
-        TERRAFORM_PROJECT_CONFIG,
-        TERRAFORM_CLUSTER_CONFIG,
-        TERRAFORM_K8S_CONFIG
+    steps = [
+        TerraformStep(
+            "project",
+            TERRAFORM_PROJECT_CONFIG,
+            env=subprocess_env,
+            outputs=["root_project.id"],
+        ),
+        LinkGithub(),
+        TerraformStep("cluster", TERRAFORM_CLUSTER_CONFIG, subprocess_env),
+        TerraformStep("k8s", TERRAFORM_K8S_CONFIG, subprocess_env),
     ]
+
     if args.destroy:
-        terraform_paths.reverse()
+        steps.reverse()
 
-    for terraform_config in terraform_paths:
-        subprocess.run(
-            ['terraform', 'init'],
-            check=True,
-            cwd=terraform_config,
-            env=subprocess_env,
+    step_results = {}
+    for step in steps:
+        should_continue, results = step.run(
+            args.destroy, previous_step_results=step_results
         )
 
-        plan_args = ['terraform', 'plan', '-out', 'tfplan']
-        if args.destroy:
-            plan_args.append('-destroy')
-
-        subprocess.run(
-            plan_args,
-            check=True,
-            cwd=terraform_config,
-            env=subprocess_env,
-        )
-
-        # TODO: Check if plan does anything
-        # terraform show -json tfplan | jq .resource_changes[].change.actions[]
-
-        if not prompt_yes_no("Would you like to apply the above plan"):
-            print("Not applying plan. Exiting.\n")
+        if not should_continue:
+            print(f"\n\nStep '{step.name}' stopped execution. Exiting.")
             sys.exit(0)
 
-        subprocess.run(
-            ['terraform', 'apply', 'tfplan'],
-            check=True,
-            cwd=terraform_config,
-            env=subprocess_env,
-        )
-
-
-def prompt_yes_no(question, default=False):
-    if default:
-        options = "[Y]/n"
-    else:
-        options = "y/[N]"
-
-    prompt = f"{question} ({options}): "
-
-    while True:
-        answer = input(prompt)
-
-        if not answer:
-            return default
-
-        if answer.lower().startswith('y'):
-            return True
-        elif answer.lower().startswith('n'):
-            return False
-
-        print("Please answer with 'y' or 'n'.")
+        step_results[step.name] = results or {}
