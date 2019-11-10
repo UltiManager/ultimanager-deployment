@@ -24,7 +24,7 @@ class LinkGithub(BaseStep):
         url = f"https://console.cloud.google.com/cloud-build/triggers/connect?project={project_id}"
 
         print(
-            f"\n\nPlease link your GitHub repositories to your GCP project."
+            f"\n\nPlease link your GitHub repositories to your GCP project. "
             f"Do NOT create any triggers for the repositories:\n\n"
             f"    {url}"
             f"\n\nPress enter to continue..."

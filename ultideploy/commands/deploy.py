@@ -3,7 +3,7 @@ import pathlib
 import sys
 
 from ultideploy import constants, credentials, resources
-from ultideploy.steps import LinkGithub, TerraformStep
+from ultideploy.steps import InstallIstio, LinkGithub, TerraformStep
 
 
 PROJECT_ROOT = pathlib.Path(__file__).parents[2]
@@ -43,7 +43,21 @@ def deploy(args):
             outputs=["root_project.id"],
         ),
         LinkGithub(),
-        TerraformStep("cluster", TERRAFORM_CLUSTER_CONFIG, subprocess_env),
+        TerraformStep(
+            "cluster",
+            TERRAFORM_CLUSTER_CONFIG,
+            env=subprocess_env,
+            outputs=[
+                "cluster_address.address",
+                "cluster_auth_ca_certificate",
+                "cluster_auth_certificate",
+                "cluster_auth_key",
+                "cluster_host",
+                "cluster_name",
+                "cluster_region",
+            ]
+        ),
+        InstallIstio(),
         TerraformStep("k8s", TERRAFORM_K8S_CONFIG, subprocess_env),
     ]
 

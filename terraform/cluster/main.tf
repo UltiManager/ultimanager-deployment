@@ -107,3 +107,11 @@ output "cluster_auth_key" {
 output "cluster_host" {
   value = google_container_cluster.primary.endpoint
 }
+
+output "cluster_name" {
+  value = google_container_cluster.primary.name
+}
+
+output "cluster_region" {
+  value = google_container_cluster.primary.region
+}

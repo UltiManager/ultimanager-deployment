@@ -20,6 +20,7 @@ setup(
     install_requires=[
         "google-api-python-client",
         "google-cloud-resource-manager",
-        "oauth2client"
+        "oauth2client",
+        "pyyaml",
     ],
 )

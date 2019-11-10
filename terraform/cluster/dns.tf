@@ -1,4 +1,4 @@
-resource "google_compute_global_address" "cluster" {
+resource "google_compute_address" "cluster" {
   name    = "ultimanager-cluster"
   project = local.root_project_id
 }
@@ -16,13 +16,13 @@ resource "google_dns_record_set" "app" {
   managed_zone = data.google_dns_managed_zone.public.name
   name         = data.google_dns_managed_zone.public.dns_name
   project      = data.google_project.dns.id
-  rrdatas      = [google_compute_global_address.cluster.address]
+  rrdatas      = [google_compute_address.cluster.address]
   ttl          = 60
   type         = "A"
 }
 
 output "cluster_address" {
-  value = google_compute_global_address.cluster
+  value = google_compute_address.cluster
 }
 
 output "root_domain" {

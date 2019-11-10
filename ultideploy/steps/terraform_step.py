@@ -72,7 +72,16 @@ class TerraformStep(BaseStep):
 
         outputs = {}
         for output_path in self.outputs:
-            resource, attr = output_path.split(".")
-            outputs[f"{resource}_{attr}"] = raw_outputs[resource]['value'][attr]
+            path_parts = output_path.split(".")
+
+            if len(path_parts) == 1:
+                outputs[output_path] = raw_outputs[output_path]['value']
+            elif len(path_parts) == 2:
+                resource, attr = output_path.split(".")
+                outputs[f"{resource}_{attr}"] = raw_outputs[resource]['value'][attr]
+            else:
+                raise ValueError(
+                    f"Path not parsable (too many values): {output_path}"
+                )
 
         return outputs
