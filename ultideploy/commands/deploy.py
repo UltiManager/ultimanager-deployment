@@ -48,6 +48,7 @@ def deploy(args):
             TERRAFORM_CLUSTER_CONFIG,
             env=subprocess_env,
             outputs=[
+                "api_domain",
                 "cluster_address.address",
                 "cluster_auth_ca_certificate",
                 "cluster_auth_certificate",
@@ -55,6 +56,7 @@ def deploy(args):
                 "cluster_host",
                 "cluster_name",
                 "cluster_region",
+                "root_domain",
             ]
         ),
         InstallIstio(),

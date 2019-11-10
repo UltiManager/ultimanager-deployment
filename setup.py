@@ -21,6 +21,5 @@ setup(
         "google-api-python-client",
         "google-cloud-resource-manager",
         "oauth2client",
-        "pyyaml",
     ],
 )

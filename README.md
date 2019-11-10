@@ -90,6 +90,17 @@ optional arguments:
   -d, --destroy    Destroy the resources that are currently deployed.
 ```
 
+## Service Registration
+
+Services deployed to the `default` namespace of the provisioned cluster have
+access to Istio. This makes routing a service easy and defers all routing logic
+to the service itself. Services have access to two different gateways:
+
+* `api-ingress.istio-system.svc.cluster.local` which handles traffic on the
+  hostname `api.$ROOT_DOMAIN`, and
+* `default-ingress.istio-system.svc.cluster.local` which handles traffic on
+  `$ROOT_DOMAIN`.
+
 ## License
 
 This project is licensed under the [MIT License](LICENSE).

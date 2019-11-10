@@ -1,9 +1,8 @@
+import json
 import os
 import pathlib
 import subprocess
 import tempfile
-
-import yaml
 
 from ultideploy import credentials, constants
 from .base import BaseStep
@@ -43,6 +42,8 @@ class InstallIstio(BaseStep):
 
         project_id = project_results['root_project_id']
         address = cluster_results['cluster_address_address']
+        api_domain = cluster_results['api_domain']
+        root_domain = cluster_results['root_domain']
 
         try:
             self._gcloud_login()
@@ -51,7 +52,7 @@ class InstallIstio(BaseStep):
                 config = self._write_cluster_auth(
                     project_id, cluster_results, temp_dir
                 )
-                self._install_istio(config, address)
+                self._install_istio(config, address, root_domain, api_domain)
         finally:
             self._gcloud_logout()
 
@@ -151,7 +152,7 @@ class InstallIstio(BaseStep):
 
         return config_file
 
-    def _install_istio(self, config, address):
+    def _install_istio(self, config, address, root_domain, api_domain):
         istio_root = self._get_istio_directory()
 
         subprocess_env = os.environ.copy()
@@ -168,9 +169,9 @@ class InstallIstio(BaseStep):
             },
         }
         with tempfile.TemporaryDirectory() as temp_dir:
-            namespace_manifest = os.path.join(temp_dir, 'namespace.yaml')
+            namespace_manifest = os.path.join(temp_dir, 'namespace.json')
             with open(namespace_manifest, 'w') as f:
-                yaml.safe_dump(namespace, f)
+                json.dump(namespace, f)
 
             subprocess.run(
                 ['kubectl', 'apply', '-f', namespace_manifest],
@@ -219,6 +220,7 @@ class InstallIstio(BaseStep):
                 'label',
                 'namespace',
                 'default',
+                '--overwrite',
                 'istio-injection=enabled',
             ],
             check=True,
@@ -226,15 +228,74 @@ class InstallIstio(BaseStep):
             env=subprocess_env,
         )
 
-        subprocess.run(
-            ['kubectl', 'apply', '-f', istio_root.parents[0] / 'gateway.yaml'],
-            check=True,
-            cwd=istio_root,
-            env=subprocess_env,
-        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            api_gateway_manifest = os.path.join(temp_dir, 'api-gateway.json')
+            with open(api_gateway_manifest, 'w') as f:
+                manifest = self.gateway_manifest('api-ingress', api_domain)
+                json.dump(manifest, f)
+
+            default_gateway_manifest = os.path.join(
+                temp_dir, 'default-gateway.json'
+            )
+            with open(default_gateway_manifest, 'w') as f:
+                manifest = self.gateway_manifest('default-ingress', root_domain)
+                json.dump(manifest, f)
+
+            subprocess.run(
+                [
+                    'kubectl',
+                    'apply',
+                    '-f',
+                    default_gateway_manifest,
+                    '-f',
+                    api_gateway_manifest
+                ],
+                check=True,
+                cwd=istio_root,
+                env=subprocess_env,
+            )
 
     def _get_istio_directory(self):
         project_root = pathlib.Path(__file__).parents[2]
         istio_root = project_root / 'istio' / f'istio-{self.ISTIO_VERSION}'
 
         return istio_root
+
+    @staticmethod
+    def gateway_manifest(gateway_name, *hosts):
+        """
+        Create a manifest for a gateway.
+
+        Args:
+            gateway_name:
+                The name of the gateway.
+            *hosts:
+                The host names that the gateway should accept.
+
+        Returns:
+            A dictionary representing the gateway. This can be converted
+            to JSON and fed directly to ``kubectl``.
+        """
+        return {
+            'apiVersion': 'networking.istio.io/v1alpha3',
+            'kind': 'Gateway',
+            'metadata': {
+                'name': gateway_name,
+                'namespace': 'istio-system',
+            },
+            'spec': {
+                'selector': {
+                    'app': 'istio-ingressgateway',
+                },
+                'servers': [
+                    {
+                        'hosts': hosts,
+                        'port': {
+                            'name': 'http',
+                            'number': 80,
+                            'protocol': 'HTTP',
+                        },
+                    },
+                ],
+            },
+        }
