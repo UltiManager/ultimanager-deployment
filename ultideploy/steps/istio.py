@@ -279,6 +279,13 @@ class InstallIstio(BaseStep):
             with open(https_redirect_shenanigans, 'w') as f:
                 f.write(self.https_redirect_config(api_domain, root_domain))
 
+            domains_config_manifest = os.path.join(temp_dir, 'domains.json')
+            with open(domains_config_manifest, 'w') as f:
+                manifest = self.domains_config(
+                    api_domain=api_domain, root_domain=root_domain
+                )
+                json.dump(manifest, f)
+
             subprocess.run(
                 [
                     'kubectl',
@@ -293,6 +300,8 @@ class InstallIstio(BaseStep):
                     api_certificate_manifest,
                     '-f',
                     https_redirect_shenanigans,
+                    '-f',
+                    domains_config_manifest,
                 ],
                 check=True,
                 cwd=istio_root,
@@ -333,6 +342,17 @@ class InstallIstio(BaseStep):
                     ],
                 },
             },
+        }
+
+    @staticmethod
+    def domains_config(**kwargs):
+        return {
+            "apiVersion": "v1",
+            "kind": "ConfigMap",
+            "metadata": {
+                "name": "domains-config",
+            },
+            "data": {key.upper(): value for key, value in kwargs.items()}
         }
 
     @staticmethod

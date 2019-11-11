@@ -100,6 +100,14 @@ to the service itself. Services have access to two different gateways:
   hostname `api.$ROOT_DOMAIN`, and
 * `default-ingress.istio-system.svc.cluster.local` which handles traffic on
   `$ROOT_DOMAIN`.
+  
+Services also have access to the `domains-config` Config Map in the `default`
+namespace. It contains the domain names mapped to the above ingresses:
+
+| Key               | Value                                          |
+| ----------------- | ---------------------------------------------- |
+| __`API_DOMAIN`__  | The domain that the API is made accessible at. |
+| __`ROOT_DOMAIN`__ | The domain for the default ingress.            |
 
 ## License
 
