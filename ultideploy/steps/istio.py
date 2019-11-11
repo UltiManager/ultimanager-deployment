@@ -384,6 +384,22 @@ class InstallIstio(BaseStep):
 
     @staticmethod
     def https_redirect_config(*redirected_hosts):
+        """
+        Create the manifest for a service that redirects HTTP to HTTPS
+        for specified hosts.
+
+        This is needed because the ACME challenges for HTTPS need the
+        default Istio ingress and break if the HTTPS redirect is
+        enabled. See the following link for more information:
+
+        https://medium.com/@gregoire.waymel/istio-cert-manager-lets-encrypt-demystified-c1cbed011d67
+
+        Args:
+            *redirected_hosts:
+
+        Returns:
+
+        """
         manifests = [
             # NGINX config for the redirect
             {
