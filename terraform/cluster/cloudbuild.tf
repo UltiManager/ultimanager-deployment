@@ -20,7 +20,7 @@ resource "google_cloudbuild_trigger" "web" {
     name  = "ultimanager-web"
 
     push {
-      branch = "cloud-build"
+      branch = "master"
     }
   }
 
