@@ -161,7 +161,14 @@ class InstallIstio(BaseStep):
         )
         subprocess_env['KUBECONFIG'] = config
 
-        namespace = {
+        cert_namespace = {
+            'apiVersion': 'v1',
+            'kind': 'Namespace',
+            'metadata': {
+                'name': 'cert-manager',
+            },
+        }
+        istio_namespace = {
             'apiVersion': 'v1',
             'kind': 'Namespace',
             'metadata': {
@@ -169,12 +176,23 @@ class InstallIstio(BaseStep):
             },
         }
         with tempfile.TemporaryDirectory() as temp_dir:
-            namespace_manifest = os.path.join(temp_dir, 'namespace.json')
-            with open(namespace_manifest, 'w') as f:
-                json.dump(namespace, f)
+            cert_namespace_manifest = os.path.join(temp_dir, 'cert-namespace.json')
+            with open(cert_namespace_manifest, 'w') as f:
+                json.dump(cert_namespace, f)
+
+            istio_namespace_manifest = os.path.join(temp_dir, 'istio-namespace.json')
+            with open(istio_namespace_manifest, 'w') as f:
+                json.dump(istio_namespace, f)
 
             subprocess.run(
-                ['kubectl', 'apply', '-f', namespace_manifest],
+                [
+                    'kubectl',
+                    'apply',
+                    '-f',
+                    cert_namespace_manifest,
+                    '-f',
+                    istio_namespace_manifest,
+                ],
                 check=True,
                 cwd=istio_root,
                 env=subprocess_env,
@@ -187,6 +205,8 @@ class InstallIstio(BaseStep):
                 '--install',
                 '--namespace',
                 'istio-system',
+                '-f',
+                istio_root.parents[0] / 'values.yaml',
                 'istio-init',
                 istio_root / 'install' / 'kubernetes' / 'helm' / 'istio-init',
             ],
@@ -194,6 +214,8 @@ class InstallIstio(BaseStep):
             cwd=istio_root,
             env=subprocess_env,
         )
+
+        # TODO: Wait for CRDs to become available
 
         subprocess.run(
             [
@@ -204,6 +226,8 @@ class InstallIstio(BaseStep):
                 'istio-system',
                 '-f',
                 istio_root.parents[0] / 'values.yaml',
+                '--set',
+                f'certmanager.email={constants.LETSENCRYPT_EMAIL}',
                 '--set',
                 f'gateways.istio-ingressgateway.loadBalancerIP={address}',
                 'istio',
@@ -231,15 +255,29 @@ class InstallIstio(BaseStep):
         with tempfile.TemporaryDirectory() as temp_dir:
             api_gateway_manifest = os.path.join(temp_dir, 'api-gateway.json')
             with open(api_gateway_manifest, 'w') as f:
-                manifest = self.gateway_manifest('api-ingress', api_domain)
+                manifest = self.gateway_manifest('api-ingress', api_domain, cert_name='api-cert')
                 json.dump(manifest, f)
 
             default_gateway_manifest = os.path.join(
                 temp_dir, 'default-gateway.json'
             )
             with open(default_gateway_manifest, 'w') as f:
-                manifest = self.gateway_manifest('default-ingress', root_domain)
+                manifest = self.gateway_manifest('default-ingress', root_domain, cert_name='root-cert')
                 json.dump(manifest, f)
+
+            api_certificate_manifest = os.path.join(temp_dir, 'api-certificate.json')
+            with open(api_certificate_manifest, 'w') as f:
+                manifest = self.certificate_manifest('api-cert', api_domain)
+                json.dump(manifest, f)
+
+            root_certificate_manifest = os.path.join(temp_dir, 'root-certificate.json')
+            with open(root_certificate_manifest, 'w') as f:
+                manifest = self.certificate_manifest('root-cert', root_domain)
+                json.dump(manifest, f)
+
+            https_redirect_shenanigans = os.path.join(temp_dir, 'redirect.json')
+            with open(https_redirect_shenanigans, 'w') as f:
+                f.write(self.https_redirect_config(api_domain, root_domain))
 
             subprocess.run(
                 [
@@ -248,7 +286,13 @@ class InstallIstio(BaseStep):
                     '-f',
                     default_gateway_manifest,
                     '-f',
-                    api_gateway_manifest
+                    api_gateway_manifest,
+                    '-f',
+                    root_certificate_manifest,
+                    '-f',
+                    api_certificate_manifest,
+                    '-f',
+                    https_redirect_shenanigans,
                 ],
                 check=True,
                 cwd=istio_root,
@@ -262,7 +306,37 @@ class InstallIstio(BaseStep):
         return istio_root
 
     @staticmethod
-    def gateway_manifest(gateway_name, *hosts):
+    def certificate_manifest(cert_name, primary_domain, *additional_domains):
+        return {
+            'apiVersion': 'certmanager.k8s.io/v1alpha1',
+            'kind': 'Certificate',
+            'metadata': {
+                'name': cert_name,
+                'namespace': 'istio-system',
+            },
+            'spec': {
+                'secretName': cert_name,
+                'issuerRef': {
+                    'name': 'letsencrypt',
+                    'kind': 'ClusterIssuer',
+                },
+                'commonName': primary_domain,
+                'dnsNames': [primary_domain] + list(additional_domains),
+                'acme': {
+                    'config': [
+                        {
+                            'http01': {
+                                'ingressClass': 'istio',
+                            },
+                            'domains': [primary_domain] + list(additional_domains),
+                        },
+                    ],
+                },
+            },
+        }
+
+    @staticmethod
+    def gateway_manifest(gateway_name, *hosts, cert_name=None):
         """
         Create a manifest for a gateway.
 
@@ -271,6 +345,8 @@ class InstallIstio(BaseStep):
                 The name of the gateway.
             *hosts:
                 The host names that the gateway should accept.
+            cert_name:
+                The name of the TLS certificate to use.
 
         Returns:
             A dictionary representing the gateway. This can be converted
@@ -291,11 +367,152 @@ class InstallIstio(BaseStep):
                     {
                         'hosts': hosts,
                         'port': {
-                            'name': 'http',
-                            'number': 80,
-                            'protocol': 'HTTP',
+                            'name': 'https',
+                            'number': 443,
+                            'protocol': 'HTTPS',
                         },
+                        'tls': {
+                            'credentialName': cert_name,
+                            'mode': 'SIMPLE',
+                            'privateKey': 'sds',
+                            'serverCertificate': 'sds',
+                        }
                     },
                 ],
             },
         }
+
+    @staticmethod
+    def https_redirect_config(*redirected_hosts):
+        manifests = [
+            # NGINX config for the redirect
+            {
+                "apiVersion": "v1",
+                "kind": "ConfigMap",
+                "metadata": {
+                    "name": "https-redirect-nginx-config",
+                    "namespace": "istio-system",
+                },
+                "data": {
+                    "nginx.conf": "\n".join([
+                        "server {",
+                        "  listen 80 default_server;",
+                        "  server_name _;",
+                        "  return 301 https://$host$request_uri;"
+                        "}"
+                    ])
+                }
+            },
+            # Redirect service
+            {
+                "apiVersion": "v1",
+                "kind": "Service",
+                "metadata": {
+                    "name": "https-redirect",
+                    "namespace": "istio-system",
+                    "labels": {
+                        "app": "https-redirect",
+                    },
+                },
+                "spec": {
+                    "ports": [
+                        {
+                            "name": "http",
+                            "port": 80,
+                        },
+                    ],
+                    "selector": {
+                        "app": "https-redirect",
+                    },
+                },
+            },
+            # NGINX deployment for HTTPS redirect
+            {
+                "apiVersion": "apps/v1",
+                "kind": "Deployment",
+                "metadata": {
+                    "name": "https-redirect",
+                    "namespace": "istio-system",
+                },
+                "spec": {
+                    "replicas": 2,
+                    "selector": {
+                        "matchLabels": {
+                            "app": "https-redirect",
+                        },
+                    },
+                    "template": {
+                        "metadata": {
+                            "labels": {
+                                "app": "https-redirect",
+                            },
+                        },
+                        "spec": {
+                            "containers": [
+                                {
+                                    "name": "https-redirect",
+                                    "image": "nginx:stable",
+                                    "imagePullPolicy": "IfNotPresent",
+                                    "ports": [
+                                        {
+                                            "containerPort": 80,
+                                            "name": "http",
+                                        },
+                                    ],
+                                    "resources": {
+                                        "requests": {
+                                            "cpu": "100m",
+                                        },
+                                    },
+                                    "volumeMounts": [
+                                        {
+                                            "mountPath": "/etc/nginx/conf.d",
+                                            "name": "config",
+                                        },
+                                    ],
+                                },
+                            ],
+                            "volumes": [
+                                {
+                                    "name": "config",
+                                    "configMap": {
+                                        "name": "https-redirect-nginx-config",
+                                    },
+                                },
+                            ],
+                        },
+                    },
+                },
+            },
+            # Virtual service determining which hosts get redirected
+            {
+                "apiVersion": "networking.istio.io/v1alpha3",
+                "kind": "VirtualService",
+                "metadata": {
+                    "name": "https-redirect",
+                    "namespace": "istio-system",
+                },
+                "spec": {
+                    "hosts": redirected_hosts,
+                    "gateways": ["istio-autogenerated-k8s-ingress"],
+                    "http": [
+                        {
+                            "route": [
+                                {
+                                    "destination": {
+                                        "host": "https-redirect",
+                                        "port": {
+                                            "number": 80,
+                                        },
+                                    },
+                                },
+                            ],
+                        },
+                    ],
+                },
+            },
+        ]
+
+        # If there are multiple JSON objects in a K8s manifest, they are placed
+        # back-to-back with no separators (except a newline).
+        return "\n".join([json.dumps(manifest) for manifest in manifests])

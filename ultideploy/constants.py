@@ -18,3 +18,5 @@ TERRAFORM_BUCKET_NAME = TERRAFORM_ADMIN_PROJECT_ID
 # TODO: Make DNS settings configurable
 DNS_PROJECT_ID = 'ultimanager-dns'
 ROOT_DOMAIN = 'ultimanager.com'
+
+LETSENCRYPT_EMAIL = 'admin@ultimanager.com'

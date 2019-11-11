@@ -1,8 +1,29 @@
+certmanager:
+  enabled: true
+  tag: v0.10.1
+
 gateways:
   enabled: true
 
   istio-ingressgateway:
     enabled: true
+
+    sds:
+      enabled: true
+
+global:
+  k8sIngress:
+    # We need the default ingress because Letsencrypt challenges use the `istio`
+    # ingress which maps to the default gateway.
+    enabled: true
+    gatewayName: ingressgateway
+
+mixer:
+  telemetry:
+    resources:
+      requests:
+        cpu: '250m'
+        memory: '512Mi'
 
 pilot:
   resources:

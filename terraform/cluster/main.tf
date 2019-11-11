@@ -70,6 +70,11 @@ resource "google_container_node_pool" "primary_preemptible_nodes" {
   project    = local.root_project_id
   version    = data.google_container_engine_versions.latest_patch.latest_node_version
 
+  autoscaling {
+    max_node_count = 6
+    min_node_count = 1
+  }
+
   node_config {
     preemptible  = true
     machine_type = "n1-standard-1"
