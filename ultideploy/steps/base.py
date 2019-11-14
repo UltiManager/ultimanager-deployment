@@ -1,17 +1,19 @@
+import shutil
+
+
 class BaseStep:
     """
     Defines the behavior of a deployment step.
     """
     name = None
 
-    @staticmethod
-    def prompt_yes_no(question, default=False):
+    def prompt_yes_no(self, question, default=False):
         if default:
             options = "[Y]/n"
         else:
             options = "y/[N]"
 
-        prompt = f"{question} ({options}): "
+        prompt = f"[{self.name}] {question} ({options}): "
 
         while True:
             answer = input(prompt)
@@ -25,6 +27,19 @@ class BaseStep:
                 return False
 
             print("Please answer with 'y' or 'n'.")
+
+    def pre_run(self):
+        """
+        Called before the step starts running. The default behavior is
+        to print out the step's name.
+        """
+        cols, _ = shutil.get_terminal_size((80, 20))
+
+        print("\n\n")
+        print("#" * cols)
+        print(f"# {self.name.center(cols - 4)} #")
+        print("#" * cols)
+        print("\n\n")
 
     def run(self, destroy=False, previous_step_results=None):
         """

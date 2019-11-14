@@ -3,6 +3,7 @@ import os
 import pathlib
 import subprocess
 import tempfile
+import time
 
 from ultideploy import credentials, constants
 from .base import BaseStep
@@ -161,6 +162,36 @@ class InstallIstio(BaseStep):
         )
         subprocess_env['KUBECONFIG'] = config
 
+        # Wait for Kubernetes to be available
+        print("\nWaiting for cluster to become available...")
+        timeout = 60
+        start_time = time.time()
+        while True:
+            try:
+                subprocess.check_call(
+                    ['kubectl', 'cluster-info'],
+                    cwd=istio_root,
+                    env=subprocess_env,
+                )
+                print("Successfully pinged cluster.")
+                break
+            except subprocess.CalledProcessError:
+                pass
+
+            if time.time() - start_time > timeout:
+                print(f"Exceeded {timeout} second timeout. Exiting.")
+
+                return False, None
+
+            print(
+                f"Cluster not available, sleeping for 5 seconds. ("
+                f"{timeout - (time.time() - start_time):.0f} seconds "
+                f"remaining until timeout)"
+            )
+            time.sleep(5)
+
+        print("\n\n")
+
         cert_namespace = {
             'apiVersion': 'v1',
             'kind': 'Namespace',
@@ -215,7 +246,44 @@ class InstallIstio(BaseStep):
             env=subprocess_env,
         )
 
-        # TODO: Wait for CRDs to become available
+        attempts = 0
+        timeout = 60
+        start_time = time.time()
+        expected_crds = 23
+        print("\n\nWaiting for Istio CRDs to become available...")
+        while True:
+            crd_result = subprocess.run(
+                ['kubectl', 'get', 'crds'],
+                check=True,
+                cwd=istio_root,
+                encoding='utf8',
+                env=subprocess_env,
+                stdout=subprocess.PIPE,
+            )
+
+            istio_crds = [
+                l for l in crd_result.stdout.split('\n') if 'istio.io' in l
+            ]
+
+            if len(istio_crds) == expected_crds:
+                print(f"Found all {expected_crds} CRDs.")
+                break
+            if len(istio_crds) > expected_crds:
+                print(
+                    f"Found {len(istio_crds)} CRDs instead of the expected "
+                    f"{expected_crds}. Consider adjusting the expected number."
+                )
+                break
+
+            if time.time() - start_time > timeout:
+                print(f"Timed out after {timeout} seconds, exiting.")
+                return False, None
+
+            attempts += 1
+            print(f"Attempt #{attempts} - Sleeping for five seconds...")
+            time.sleep(5)
+
+        print("\n\n")
 
         subprocess.run(
             [
@@ -394,8 +462,6 @@ class InstallIstio(BaseStep):
                         'tls': {
                             'credentialName': cert_name,
                             'mode': 'SIMPLE',
-                            'privateKey': 'sds',
-                            'serverCertificate': 'sds',
                         }
                     },
                 ],

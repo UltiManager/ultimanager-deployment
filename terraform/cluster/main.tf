@@ -5,6 +5,15 @@ terraform {
   }
 }
 
+data "terraform_remote_state" "network" {
+  backend = "gcs"
+
+  config = {
+    bucket = "ultimanager-terraform-admin"
+    prefix = "network"
+  }
+}
+
 data "terraform_remote_state" "project" {
   backend = "gcs"
 
@@ -44,6 +53,7 @@ resource "google_container_cluster" "primary" {
   location           = var.gcp_region
   min_master_version = data.google_container_engine_versions.latest_patch.latest_master_version
   name               = "ultimanager"
+  network            = data.terraform_remote_state.network.outputs.vpc.name
   project            = local.root_project_id
 
   # We can't create a cluster with no node pool defined, but we want to only use
@@ -51,6 +61,10 @@ resource "google_container_cluster" "primary" {
   # node pool and immediately delete it.
   remove_default_node_pool = true
   initial_node_count       = 1
+
+  ip_allocation_policy {
+    use_ip_aliases = true
+  }
 
   master_auth {
     username = ""

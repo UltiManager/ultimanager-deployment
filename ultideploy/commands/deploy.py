@@ -10,6 +10,7 @@ PROJECT_ROOT = pathlib.Path(__file__).parents[2]
 
 TERRAFORM_CLUSTER_CONFIG = PROJECT_ROOT / 'terraform' / 'cluster'
 TERRAFORM_K8S_CONFIG = PROJECT_ROOT / 'terraform' / 'k8s'
+TERRAFORM_NETWORK_CONFIG = PROJECT_ROOT / 'terraform' / 'network'
 TERRAFORM_PROJECT_CONFIG = PROJECT_ROOT / 'terraform' / 'project'
 
 
@@ -44,6 +45,11 @@ def deploy(args):
         ),
         LinkGithub(),
         TerraformStep(
+            "network",
+            TERRAFORM_NETWORK_CONFIG,
+            env=subprocess_env,
+        ),
+        TerraformStep(
             "cluster",
             TERRAFORM_CLUSTER_CONFIG,
             env=subprocess_env,
@@ -68,6 +74,7 @@ def deploy(args):
 
     step_results = {}
     for step in steps:
+        step.pre_run()
         should_continue, results = step.run(
             args.destroy, previous_step_results=step_results
         )
