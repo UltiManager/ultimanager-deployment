@@ -6,7 +6,9 @@ TERRAFORM_ADMIN_PROJECT_SERVICES = [
     "cloudresourcemanager",
     "container",
     "iam",
+    "servicenetworking",
     "serviceusage",
+    "sqladmin",
     "storage-api",
 ]
 

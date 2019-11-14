@@ -8,7 +8,11 @@ variable "gcp_region" {
 }
 
 variable "project_services" {
-  default     = ["container.googleapis.com", "sourcerepo.googleapis.com"]
+  default = [
+    "container.googleapis.com",
+    "servicenetworking.googleapis.com",
+    "sourcerepo.googleapis.com"
+  ]
   description = "The APIs that are enabled in the root project."
   type        = set(string)
 }

@@ -9,6 +9,7 @@ from ultideploy.steps import InstallIstio, LinkGithub, TerraformStep
 PROJECT_ROOT = pathlib.Path(__file__).parents[2]
 
 TERRAFORM_CLUSTER_CONFIG = PROJECT_ROOT / 'terraform' / 'cluster'
+TERRAFORM_DATABASE_CONFIG = PROJECT_ROOT / 'terraform' / 'database'
 TERRAFORM_K8S_CONFIG = PROJECT_ROOT / 'terraform' / 'k8s'
 TERRAFORM_NETWORK_CONFIG = PROJECT_ROOT / 'terraform' / 'network'
 TERRAFORM_PROJECT_CONFIG = PROJECT_ROOT / 'terraform' / 'project'
@@ -47,6 +48,11 @@ def deploy(args):
         TerraformStep(
             "network",
             TERRAFORM_NETWORK_CONFIG,
+            env=subprocess_env,
+        ),
+        TerraformStep(
+            "database",
+            TERRAFORM_DATABASE_CONFIG,
             env=subprocess_env,
         ),
         TerraformStep(
