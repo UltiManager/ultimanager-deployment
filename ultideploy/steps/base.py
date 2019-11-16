@@ -7,6 +7,31 @@ class BaseStep:
     """
     name = None
 
+    @staticmethod
+    def terminal_width():
+        cols, _ = shutil.get_terminal_size((80, 20))
+
+        return cols
+
+    def print_header(self):
+        cols = self.terminal_width()
+
+        print("\n\n")
+        print("#" * cols)
+        print(f"# {self.name.center(cols - 4)} #")
+        print("#" * cols)
+        print("\n\n")
+
+    def print_log(self, message):
+        print(f"[{self.name}] {message}")
+
+    def print_section(self, section_name):
+        cols = self.terminal_width()
+
+        print("\n")
+        print(f"{self.name}: {section_name}".center(cols))
+        print("-" * cols, end="\n\n")
+
     def prompt_yes_no(self, question, default=False):
         if default:
             options = "[Y]/n"
@@ -35,11 +60,7 @@ class BaseStep:
         """
         cols, _ = shutil.get_terminal_size((80, 20))
 
-        print("\n\n")
-        print("#" * cols)
-        print(f"# {self.name.center(cols - 4)} #")
-        print("#" * cols)
-        print("\n\n")
+        self.print_header()
 
     def run(self, destroy=False, previous_step_results=None):
         """

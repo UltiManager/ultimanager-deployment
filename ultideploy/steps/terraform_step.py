@@ -1,5 +1,7 @@
 import json
+import pathlib
 import subprocess
+import tempfile
 
 from .base import BaseStep
 
@@ -16,13 +18,23 @@ class TerraformStep(BaseStep):
         self.outputs = outputs or []
 
     def run(self, destroy=False, **kwargs):
+        self.print_section("Initialize Terraform")
         self._init()
-        self._plan(destroy)
 
-        if not self._prompt():
-            return False, {}
+        with tempfile.TemporaryDirectory() as temp_dir:
+            plan_file = pathlib.Path(temp_dir) / 'plan'
 
-        self._apply()
+            self.print_section("Plan Terraform Changes")
+            self._plan(plan_file, destroy)
+
+            if not self._plan_has_changes(plan_file):
+                # If the plan has no changes, there's no need to prompt.
+                self.print_log("No changes to apply. Continuing.")
+            elif not self._prompt():
+                return False, None
+            else:
+                self.print_section("Applying Terraform Changes")
+                self._apply(plan_file)
 
         outputs = self._get_outputs() if not destroy else {}
 
@@ -36,8 +48,8 @@ class TerraformStep(BaseStep):
             env=self.env,
         )
 
-    def _plan(self, destroy):
-        plan_args = ['terraform', 'plan', '-out', 'tfplan']
+    def _plan(self, plan_file, destroy):
+        plan_args = ['terraform', 'plan', '-out', plan_file]
         if destroy:
             plan_args.append('-destroy')
 
@@ -48,12 +60,28 @@ class TerraformStep(BaseStep):
             env=self.env,
         )
 
+    def _plan_has_changes(self, plan_file):
+        result = subprocess.check_output(
+            ['terraform', 'show', '-json', plan_file],
+            cwd=self.configuration_directory,
+            encoding='utf8',
+            env=self.env,
+        )
+        plan = json.loads(result)
+
+        for resource in plan['resource_changes']:
+            for action in resource['change']['actions']:
+                if action != 'no-op':
+                    return True
+
+        return False
+
     def _prompt(self):
         return self.prompt_yes_no("Would you like to apply the above plan?")
 
-    def _apply(self):
+    def _apply(self, plan_file):
         subprocess.run(
-            ['terraform', 'apply', 'tfplan'],
+            ['terraform', 'apply', plan_file],
             check=True,
             cwd=self.configuration_directory,
             env=self.env,
